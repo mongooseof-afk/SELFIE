@@ -73,11 +73,16 @@ function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
 
     try {
       const body = await readJson(req);
-      const result = typeof body.result === 'string' ? body.result.trim() : '';
+      const result = typeof body.result === 'string' ? body.result.trim().toLowerCase() : '';
       if (!RESULT_RE.test(result)) return send(req, res, 400, { error: 'Invalid result.' });
       const existing = results.get(session);
-      if (existing && existing.result !== result) return send(req, res, 409, { error: 'Session already has a different result.' });
-      results.set(session, { result: result.toLowerCase(), createdAt: now() });
+      // Duplicate delivery from another transport or an old tab must not
+      // replace a newer retry result or extend its lifetime.
+      if (existing?.seen.has(result)) return send(req, res, 200, { ok: true });
+      if (existing && existing.seen.size >= 64) return send(req, res, 429, { error: 'Too many attempts for this session.' });
+      const seen = existing?.seen || new Set();
+      seen.add(result);
+      results.set(session, { result, seen, createdAt: now() });
       return send(req, res, 200, { ok: true });
     } catch (error) {
       return send(req, res, error.status || 400, { error: error.message });
