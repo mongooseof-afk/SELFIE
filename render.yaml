@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: bls-liveness-relay
+    runtime: node
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit

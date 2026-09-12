@@ -1,0 +1,13 @@
+{
+  "name": "bls-liveness-relay",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Short-lived relay for a validated liveness result.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test server.test.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
