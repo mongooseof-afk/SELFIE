@@ -20,7 +20,9 @@ function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
 
   function send(req, res, status, body) {
     const origin = String(req.headers.origin || '');
-    const allowOrigin = ALLOWED_ORIGINS.has(origin) ? origin : 'https://www.blsspainmorocco.net';
+    const allowOrigin = ALLOWED_ORIGINS.has(origin) || /^moz-extension:\/\/[a-z0-9-]+$/i.test(origin)
+      ? origin
+      : 'https://www.blsspainmorocco.net';
     res.writeHead(status, {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
