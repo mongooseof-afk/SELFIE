@@ -1,17 +1,20 @@
 'use strict';
 
 const http = require('node:http');
+const { createSessions } = require('./sessions');
 
 const MAX_BODY_BYTES = 2048;
 const RESULT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SESSION_RE = /^[0-9a-f]{64}$/i;
 const ALLOWED_ORIGINS = new Set([
   'https://www.blsspainmorocco.net',
-  'https://blsspainmorocco.net'
+  'https://blsspainmorocco.net',
+  'https://morocco.blsportugal.com'
 ]);
 
 function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
   const results = new Map();
+  const sessionRoutes = createSessions({ ttlMs, now, results });
 
   function prune() {
     const cutoff = now() - ttlMs;
@@ -28,7 +31,7 @@ function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
       'cache-control': 'no-store',
       'access-control-allow-origin': allowOrigin,
       'access-control-allow-methods': 'GET, POST, OPTIONS',
-      'access-control-allow-headers': 'content-type, x-session-id',
+      'access-control-allow-headers': 'content-type, x-session-id, x-client-id',
       'vary': 'Origin'
     });
     res.end(JSON.stringify(body));
@@ -59,7 +62,9 @@ function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
   return http.createServer(async (req, res) => {
     prune();
     if (req.method === 'GET' && req.url === '/healthz') return send(req, res, 200, { ok: true });
+    if (req.method === 'GET' && req.url === '/v2/health') return send(req, res, 200, { ok: true, protocol: 2, capabilities: ['create', 'pincheck', 'update', 'check', 'liveness-result'] });
     if (req.method === 'OPTIONS') return send(req, res, 204, {});
+    if (await sessionRoutes(req, res, { send, readJson })) return;
     if (req.url !== '/v1/liveness-result') return send(req, res, 404, { error: 'Not found.' });
 
     const session = String(req.headers['x-session-id'] || '');

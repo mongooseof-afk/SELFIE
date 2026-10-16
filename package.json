@@ -1,11 +1,11 @@
 {
   "name": "bls-liveness-relay",
   "private": true,
-  "version": "1.0.0",
-  "description": "Short-lived relay for a validated liveness result.",
+  "version": "2.0.0",
+  "description": "Tornado selfie access codes and short-lived liveness result relay.",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test server.test.cjs"
+    "test": "node --test server.test.cjs sessions.test.cjs"
   },
   "engines": {
     "node": ">=18"
