@@ -2,6 +2,12 @@ const test = require('node:test'), assert = require('node:assert/strict'), crypt
 const { createRelay } = require('./server');
 const token = country => Buffer.from([crypto.randomUUID(),crypto.randomUUID(),'192.0.2.1',country].join(',')).toString('base64');
 const client = crypto.randomUUID();
+test('camera-only codes are never allocated to real sessions, including leading zero', () => {
+  const { generatePin } = require('./sessions');
+  const candidates = [1010, 2008, 2027, 101, 1234, 42];
+  assert.equal(generatePin(new Map([['1234', true]]), () => candidates.shift()), '0042');
+  assert.equal(candidates.length, 0);
+});
 async function setup(t, options) {
   const server = createRelay(options); await new Promise(r=>server.listen(0,'127.0.0.1',r));
   t.after(()=>server.close());

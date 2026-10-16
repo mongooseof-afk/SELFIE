@@ -3,6 +3,12 @@ const { createHash, randomInt } = require('node:crypto');
 const { isIP } = require('node:net');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const hash = value => createHash('sha256').update(value).digest('hex');
+const CAMERA_TEST_CODES = new Set(['1010', '2008', '2027', '0101']);
+function generatePin(pins, random = () => randomInt(10000)) {
+  let pin;
+  do { pin = String(random()).padStart(4, '0'); } while (pins.has(pin) || CAMERA_TEST_CODES.has(pin));
+  return pin;
+}
 
 function decodeSession(token) {
   if (typeof token !== 'string' || token.length > 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(token)) return null;
@@ -62,8 +68,7 @@ function createSessions({ ttlMs, now, results }) {
         if (!item) {
           if (limited(req, 'create', 120)) return reply(429, { success: false, error: 'Too many new sessions. Wait five minutes.' });
           if (sessions.size >= 9000) return reply(503, { success: false, error: 'Code service is busy. Try later.' });
-          let pin;
-          do { pin = String(randomInt(10000)).padStart(4, '0'); } while (pins.has(pin));
+          const pin = generatePin(pins);
           item = { token, country: decoded.country, pin, client: null, expiresAt: now() + ttlMs };
           sessions.set(id, item); pins.set(pin, id);
         }
@@ -85,4 +90,4 @@ function createSessions({ ttlMs, now, results }) {
     }
   };
 }
-module.exports = { createSessions, decodeSession };
+module.exports = { createSessions, decodeSession, generatePin };
