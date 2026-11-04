@@ -12,7 +12,7 @@ Run locally for the test suite with `npm test`. A phone or another PC needs a st
 
 ## Render
 
-This repository is connected to the existing Render service. Deploy the updated main branch using `render.yaml` settings. Render assigns an `https://…onrender.com` URL when the deployment is live. Use `npm test` before pushing. The service has a `/healthz` endpoint for Render's health check and listens on Render's `PORT` at `0.0.0.0`.
+This repository is connected to the existing Render service. Deploy the updated main branch using `render.yaml` settings. Render assigns an `https://â€¦onrender.com` URL when the deployment is live. Use `npm test` before pushing. The service has a `/healthz` endpoint for Render's health check and listens on Render's `PORT` at `0.0.0.0`.
 
 The release clients use `https://bls-liveness-relay.onrender.com`. Reload both unpacked extensions after installing the matching release. Use a single Render instance because pending results are held only in memory.
 
@@ -29,3 +29,28 @@ New codes expire within five minutes, sooner if their SDK JWT expiry or server T
 Results continue through `/v1/liveness-result` with the private 64-character return-channel ID. Existing CSV tokens, `/create`, `/update`, `/check`, and `/v2/health` stay compatible. `GET /v3/health` reports `oz-session-code` support. Restarting this in-memory service clears pending codes/results, so generate fresh codes after deployment.
 
 Run `npm test` for the legacy and new-site regression tests. The matching client pair is Tornado Extension 1.1.20.1 and Selfie Pilot APK 1.0.6. Browser fixture tests do not replace a real Android capture and BLS verification test.
+# Session IP diagnostics (3.1.0)
+
+Legacy `/create` accepts an optional `generatedAt` epoch-millisecond timestamp from
+the desktop extension. The IP already present in the legacy token is retained as
+`networkContext.recordedIp`. Timestamp format and reasonable clock bounds are
+validated. Missing/invalid client times use relay code-creation time and include
+an explicit source/status; the session is not rejected for a clock difference.
+Repeated `/create` requests preserve the first generation record.
+
+Successful legacy `/pincheck` responses include `networkContext` with generation
+metadata, `observedIp`, `observedAt`, `observationSource`, and `diagnosticOnly:true`.
+Only the installation that claims the code receives this session response.
+On Render (`RENDER=true`) the observation is the first address reported by its
+`X-Forwarded-For` chain; elsewhere it is the transport peer address. These are
+diagnostic observations, not proof of the SDK connection's address, device
+identity, or verification outcome. No client header is added or rewritten.
+These values do not influence authorization, result acceptance, or rate limits.
+
+IPv4/IPv6 literals are validated and normalized, including IPv4-mapped IPv6.
+Sessions and their diagnostic metadata keep the existing in-memory expiry.
+No diagnostic endpoint, public IP log, external IP lookup service, proxy change,
+or automatic rejection based on an IP difference is introduced.
+
+References: [Render client IP reporting](https://render.com/articles/how-render-handles-ddos-attacks),
+[Render environment variables](https://render.com/docs/environment-variables).

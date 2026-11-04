@@ -2,6 +2,7 @@
 const { createHash, randomInt } = require('node:crypto');
 const { isIP } = require('node:net');
 const { normalizeSession } = require('./session-schema');
+const {generationContext,observeRequest}=require('./network-context');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const hash = value => createHash('sha256').update(value).digest('hex');
 const CAMERA_TEST_CODES = new Set(['1010', '2008', '2027', '0101']);
@@ -17,7 +18,7 @@ function decodeSession(token) {
   if (parts.length < 3 || parts.length > 4 || !UUID.test(parts[0]) || !UUID.test(parts[1]) || !isIP(parts[2])) return null;
   const country = parts[3] || 'spain';
   if (!['spain', 'portugal'].includes(country)) return null;
-  return { country };
+  return { country, desktopIp: parts[2] };
 }
 
 function createSessions({ ttlMs, now, results }) {
@@ -59,7 +60,8 @@ function createSessions({ ttlMs, now, results }) {
         if (!item || (item.client && item.client !== client)) return reply(404, { success: false, error: 'Invalid, used or expired code.' });
         item.client = client;
         if (item.kind === 'oz-session-token') return reply(200, {success:true,kind:item.kind,country:'morocco-new',configuration:item.configuration,expiresAt:item.expiresAt});
-        return reply(200, { success: true, token: item.token, country: item.country, expiresAt: item.expiresAt });
+        return reply(200, { success: true, token: item.token, country: item.country, expiresAt: item.expiresAt,
+          networkContext:{...item.networkContext,...observeRequest(req,now()),diagnosticOnly:true} });
       }
       if (path === '/v3/create') {
         const normalized = normalizeSession(body.configuration, now());
@@ -84,7 +86,8 @@ function createSessions({ ttlMs, now, results }) {
           if (limited(req, 'create', 120)) return reply(429, { success: false, error: 'Too many new sessions. Wait five minutes.' });
           if (sessions.size >= 9000) return reply(503, { success: false, error: 'Code service is busy. Try later.' });
           const pin = generatePin(pins);
-          item = { token, country: decoded.country, pin, client: null, expiresAt: now() + ttlMs };
+          item = { token, country: decoded.country, pin, client: null, expiresAt: now() + ttlMs,
+            networkContext:generationContext(decoded.desktopIp,body.generatedAt,now()) };
           sessions.set(id, item); pins.set(pin, id);
         }
         return reply(200, { success: true, pin: item.pin, expiresAt: item.expiresAt });
