@@ -1,6 +1,7 @@
 'use strict';
 const { createHash, randomInt } = require('node:crypto');
 const { isIP } = require('node:net');
+const { normalizeSession } = require('./session-schema');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const hash = value => createHash('sha256').update(value).digest('hex');
 const CAMERA_TEST_CODES = new Set(['1010', '2008', '2027', '0101']);
@@ -41,7 +42,7 @@ function createSessions({ ttlMs, now, results }) {
   }
   return async function handle(req, res, { send, readJson }) {
     const path = new URL(req.url, 'http://localhost').pathname;
-    if (!['/create', '/pincheck', '/update', '/check'].includes(path)) return false;
+    if (!['/create', '/pincheck', '/update', '/check', '/v3/create'].includes(path)) return false;
     prune();
     const reply = (status, body) => { send(req, res, status, body); return true; };
     if (req.method !== 'POST') return reply(405, { success: false, error: 'POST required.' });
@@ -57,7 +58,21 @@ function createSessions({ ttlMs, now, results }) {
         const item = sessions.get(pins.get(body.pin));
         if (!item || (item.client && item.client !== client)) return reply(404, { success: false, error: 'Invalid, used or expired code.' });
         item.client = client;
+        if (item.kind === 'oz-session-token') return reply(200, {success:true,kind:item.kind,country:'morocco-new',configuration:item.configuration,expiresAt:item.expiresAt});
         return reply(200, { success: true, token: item.token, country: item.country, expiresAt: item.expiresAt });
+      }
+      if (path === '/v3/create') {
+        const normalized = normalizeSession(body.configuration, now());
+        if (!normalized) return reply(400, {success:false,error:'Invalid or expired Oz session configuration.'});
+        const id = hash('oz-session-token:' + JSON.stringify(normalized.configuration));
+        let item = sessions.get(id);
+        if (!item) {
+          if (limited(req, 'create', 120)) return reply(429, {success:false,error:'Too many new sessions. Wait five minutes.'});
+          if (sessions.size >= 9000) return reply(503, {success:false,error:'Code service is busy. Try later.'});
+          item = {kind:'oz-session-token',configuration:normalized.configuration,client:null,pin:generatePin(pins),expiresAt:Math.min(normalized.expiresAt,now()+ttlMs)};
+          sessions.set(id,item);pins.set(item.pin,id);
+        }
+        return reply(200, {success:true,pin:item.pin,expiresAt:item.expiresAt,kind:item.kind});
       }
       const token = body.token;
       const decoded = decodeSession(token);

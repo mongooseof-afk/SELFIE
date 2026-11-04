@@ -3,13 +3,14 @@
 const http = require('node:http');
 const { createSessions } = require('./sessions');
 
-const MAX_BODY_BYTES = 2048;
+const MAX_BODY_BYTES = 48 * 1024;
 const RESULT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SESSION_RE = /^[0-9a-f]{64}$/i;
 const ALLOWED_ORIGINS = new Set([
   'https://www.blsspainmorocco.net',
   'https://blsspainmorocco.net',
-  'https://morocco.blsportugal.com'
+  'https://morocco.blsportugal.com',
+  'https://morocco.blsinternational.com'
 ]);
 
 function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
@@ -62,6 +63,7 @@ function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
   return http.createServer(async (req, res) => {
     prune();
     if (req.method === 'GET' && req.url === '/healthz') return send(req, res, 200, { ok: true });
+    if (req.method === 'GET' && req.url === '/v3/health') return send(req,res,200,{ok:true,protocol:3,capabilities:['oz-session-code','create','pincheck','liveness-result']});
     if (req.method === 'GET' && req.url === '/v2/health') return send(req, res, 200, { ok: true, protocol: 2, capabilities: ['create', 'pincheck', 'update', 'check', 'liveness-result'] });
     if (req.method === 'OPTIONS') return send(req, res, 204, {});
     if (await sessionRoutes(req, res, { send, readJson })) return;

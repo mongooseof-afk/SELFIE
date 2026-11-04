@@ -18,3 +18,14 @@ The release clients use `https://bls-liveness-relay.onrender.com`. Reload both u
 
 The server memory is intentionally ephemeral. Restarting it clears pending results. For a production deployment, run one process with automatic restart and HTTPS; do not expose it through an unauthenticated temporary tunnel.
 
+
+
+## New BLS session-token handoff (protocol 3)
+
+`POST /v3/create` accepts `{configuration}` from the new BLS Morocco website. Configuration contains `v:1`, the site's fresh `sessionToken` and `transactionId`, the approved `webAdapterUrl`, positive `appointmentId`, `issuedAt`, and a `resultChannel` for this relay's `/v1/liveness-result` endpoint. The server allocates a four-digit code from the existing shared code pool. `POST /pincheck` returns `kind: "oz-session-token"`, `country: "morocco-new"` and the original configuration to the claimed installation.
+
+New codes expire within five minutes, sooner if their SDK JWT expiry or server TTL requires it. SDK tokens are forwarded unchanged; Oz and BLS remain responsible for validating capture and identity. The relay does not mint BLS tokens or mark a booking verified. Native browser access checks must complete normally. No voice AI is involved.
+
+Results continue through `/v1/liveness-result` with the private 64-character return-channel ID. Existing CSV tokens, `/create`, `/update`, `/check`, and `/v2/health` stay compatible. `GET /v3/health` reports `oz-session-code` support. Restarting this in-memory service clears pending codes/results, so generate fresh codes after deployment.
+
+Run `npm test` for the legacy and new-site regression tests. The matching client pair is Tornado Extension 1.1.20.1 and Selfie Pilot APK 1.0.6. Browser fixture tests do not replace a real Android capture and BLS verification test.
