@@ -1,6 +1,7 @@
 'use strict';
 const { createHash, randomInt } = require('node:crypto');
 const { isIP } = require('node:net');
+const { normalize: normalizeHeaderContext } = require('./header-context');
 const { normalizeSession } = require('./session-schema');
 const {generationContext,observeRequest}=require('./network-context');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -61,6 +62,7 @@ function createSessions({ ttlMs, now, results }) {
         item.client = client;
         if (item.kind === 'oz-session-token') return reply(200, {success:true,kind:item.kind,country:'morocco-new',configuration:item.configuration,expiresAt:item.expiresAt});
         return reply(200, { success: true, token: item.token, country: item.country, expiresAt: item.expiresAt,
+          ...(item.headerContext ? {headerContext:item.headerContext} : {}),
           networkContext:{...item.networkContext,...observeRequest(req,now()),diagnosticOnly:true} });
       }
       if (path === '/v3/create') {
@@ -81,16 +83,19 @@ function createSessions({ ttlMs, now, results }) {
       if (!decoded) return reply(400, { success: false, error: 'Invalid Tornado session.' });
       const id = hash(token);
       if (path === '/create') {
+        const headerContext = body.headerContext === undefined ? null : normalizeHeaderContext(body.headerContext, decoded.desktopIp, decoded.country, now());
+        if (body.headerContext !== undefined && !headerContext) return reply(400, {success:false,error:'Invalid session headers.'});
         let item = sessions.get(id);
         if (!item) {
           if (limited(req, 'create', 120)) return reply(429, { success: false, error: 'Too many new sessions. Wait five minutes.' });
           if (sessions.size >= 9000) return reply(503, { success: false, error: 'Code service is busy. Try later.' });
           const pin = generatePin(pins);
           item = { token, country: decoded.country, pin, client: null, expiresAt: now() + ttlMs,
-            networkContext:generationContext(decoded.desktopIp,body.generatedAt,now()) };
+            networkContext:generationContext(decoded.desktopIp,body.generatedAt,now()), ...(headerContext ? {headerContext} : {}) };
           sessions.set(id, item); pins.set(pin, id);
         }
-        return reply(200, { success: true, pin: item.pin, expiresAt: item.expiresAt });
+        if (headerContext && (!item.headerContext || Object.keys(headerContext).some(k => k !== 'capturedAt' && headerContext[k] !== item.headerContext[k]) || Object.keys(item.headerContext).some(k => k !== 'capturedAt' && headerContext[k] !== item.headerContext[k]))) return reply(409, {success:false,error:'Session headers already fixed. Generate a new selfie session.'});
+        return reply(200, { success: true, pin: item.pin, expiresAt: item.expiresAt, ...(item.headerContext ? {headerContextVersion:1} : {}) });
       }
       const item = sessions.get(id);
       if (!item) return reply(404, { success: false, error: 'Session expired. Generate a new selfie link.' });
@@ -109,3 +114,4 @@ function createSessions({ ttlMs, now, results }) {
   };
 }
 module.exports = { createSessions, decodeSession, generatePin };
+

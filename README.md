@@ -54,3 +54,27 @@ or automatic rejection based on an IP difference is introduced.
 
 References: [Render client IP reporting](https://render.com/articles/how-render-handles-ddos-attacks),
 [Render environment variables](https://render.com/docs/environment-variables).
+
+
+
+## Session header context (3.2.0)
+
+`POST /create` optionally accepts `{token, headerContext}`. The version-1 context
+contains `version:1`, `capturedAt` (epoch milliseconds), `ipAddress`, `UserAgent`,
+`userUrl`, and optional `BrowserData`, `Platform`, `isMobile`. The IP must match
+the token, the HTTPS source page must match its BLS country, and header values
+must be bounded strings without control characters. Mobile is `?0` or `?1`.
+The desktop captures these values from the same tab/document/form request.
+
+The first context is immutable for that token. `/create` acknowledges it with
+`headerContextVersion:1`; `/pincheck` returns the stored `headerContext` only to
+the installation claiming the PIN. Context expires with the existing session.
+A conflicting context returns 409; generate a new BLS session instead of changing
+an existing one. Unknown fields are discarded. Nothing is written to logs/disk.
+
+`GET /v2/health` includes `session-headers-v1`. Existing clients that omit the
+context, protocol 3, result validation, rate limits, and code ownership retain
+their previous behavior. Matching releases: desktop Portugal 1.8.46 and APK
+1.0.20-session-headers. Deploy relay first, reload the desktop extension, install
+the APK, then generate a fresh code. Restarting the in-memory relay clears
+existing codes/results, as before. No BLS/Oz verification outcome is changed.

@@ -64,7 +64,7 @@ function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
     prune();
     if (req.method === 'GET' && req.url === '/healthz') return send(req, res, 200, { ok: true });
     if (req.method === 'GET' && req.url === '/v3/health') return send(req,res,200,{ok:true,protocol:3,capabilities:['oz-session-code','create','pincheck','liveness-result']});
-    if (req.method === 'GET' && req.url === '/v2/health') return send(req, res, 200, { ok: true, protocol: 2, capabilities: ['create', 'pincheck', 'update', 'check', 'liveness-result', 'session-network-diagnostics'] });
+    if (req.method === 'GET' && req.url === '/v2/health') return send(req, res, 200, { ok: true, protocol: 2, capabilities: ['create', 'pincheck', 'update', 'check', 'liveness-result', 'session-network-diagnostics', 'session-headers-v1'] });
     if (req.method === 'OPTIONS') return send(req, res, 204, {});
     if (await sessionRoutes(req, res, { send, readJson })) return;
     if (req.url !== '/v1/liveness-result') return send(req, res, 404, { error: 'Not found.' });
@@ -109,3 +109,4 @@ if (require.main === module) {
 }
 
 module.exports = { createRelay, start, RESULT_RE, SESSION_RE };
+
