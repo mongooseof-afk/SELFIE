@@ -1,5 +1,6 @@
 'use strict';
-const { createHash, randomInt } = require('node:crypto');
+const { createHash, randomInt, randomBytes } = require('node:crypto');
+const SessionPackage = require('./session-package');
 const { isIP } = require('node:net');
 const { normalize: normalizeHeaderContext } = require('./header-context');
 const { normalizeSession } = require('./session-schema');
@@ -25,10 +26,11 @@ function decodeSession(token) {
 function createSessions({ ttlMs, now, results }) {
   const sessions = new Map();
   const pins = new Map();
+  const links = new Map();
   const limits = new Map();
   const prune = () => {
     for (const [id, value] of sessions) if (value.expiresAt <= now()) {
-      sessions.delete(id); pins.delete(value.pin);
+      sessions.delete(id); pins.delete(value.pin);if(value.linkKey)links.delete(value.linkKey);
     }
     for (const [id, value] of limits) if (value.until <= now()) limits.delete(id);
   };
@@ -44,25 +46,28 @@ function createSessions({ ttlMs, now, results }) {
   }
   return async function handle(req, res, { send, readJson }) {
     const path = new URL(req.url, 'http://localhost').pathname;
-    if (!['/create', '/pincheck', '/update', '/check', '/v3/create'].includes(path)) return false;
+    if (!['/create', '/pincheck', '/session/claim', '/update', '/check', '/v3/create'].includes(path)) return false;
     prune();
     const reply = (status, body) => { send(req, res, status, body); return true; };
     if (req.method !== 'POST') return reply(405, { success: false, error: 'POST required.' });
     try {
       const body = await readJson(req);
-      if (path === '/pincheck') {
+      if (path === '/pincheck' || path === '/session/claim') {
+        const byLink=path==='/session/claim';
         const client = String(req.headers['x-client-id'] || '');
-        if (!/^[a-f0-9-]{32,36}$/i.test(client) || !/^\d{4}$/.test(body.pin || '')) {
+        if (!/^[a-f0-9-]{32,36}$/i.test(client) || (byLink?!/^[A-Za-z0-9_-]{43}$/.test(body.accessKey||'')||!/^[a-f0-9]{64}$/.test(body.packageFingerprint||''):!/^\d{4}$/.test(body.pin || ''))) {
           return reply(400, { success: false, error: 'Invalid access code or device.' });
         }
         // A short code can be claimed by one APK installation only.
         if (limited(req, 'lookup', 30)) return reply(429, { success: false, error: 'Too many code checks. Wait five minutes.' });
-        const item = sessions.get(pins.get(body.pin));
+        const item = sessions.get(byLink?links.get(body.accessKey):pins.get(body.pin));
         if (!item || (item.client && item.client !== client)) return reply(404, { success: false, error: 'Invalid, used or expired code.' });
+        if(byLink&&(!item.sessionPackage||body.packageFingerprint!==item.packageFingerprint))return reply(400,{success:false,error:'Session package fingerprint mismatch.'});
         item.client = client;
         if (item.kind === 'oz-session-token') return reply(200, {success:true,kind:item.kind,country:'morocco-new',configuration:item.configuration,expiresAt:item.expiresAt});
         return reply(200, { success: true, token: item.token, country: item.country, expiresAt: item.expiresAt,
           ...(item.headerContext ? {headerContext:item.headerContext} : {}),
+          ...(byLink?{sessionPackage:item.sessionPackage,packageFingerprint:item.packageFingerprint}:{}),
           networkContext:{...item.networkContext,...observeRequest(req,now()),diagnosticOnly:true} });
       }
       if (path === '/v3/create') {
@@ -85,6 +90,12 @@ function createSessions({ ttlMs, now, results }) {
       if (path === '/create') {
         const headerContext = body.headerContext === undefined ? null : normalizeHeaderContext(body.headerContext, decoded.desktopIp, decoded.country, now());
         if (body.headerContext !== undefined && !headerContext) return reply(400, {success:false,error:'Invalid session headers.'});
+        let sessionPackage=null,packageFingerprint;
+        if(body.sessionPackage!==undefined){
+          sessionPackage=SessionPackage.validate(body.sessionPackage,normalizeHeaderContext,now(),900000);
+          packageFingerprint=sessionPackage?hash('tornado-session-package-v1:'+SessionPackage.canonical(sessionPackage)):null;
+          if(!sessionPackage||!headerContext||sessionPackage.token!==token||SessionPackage.canonical(sessionPackage.headerContext)!==SessionPackage.canonical(headerContext)||packageFingerprint!==body.packageFingerprint)return reply(400,{success:false,error:'Invalid session package.'});
+        }
         let item = sessions.get(id);
         if (!item) {
           if (limited(req, 'create', 120)) return reply(429, { success: false, error: 'Too many new sessions. Wait five minutes.' });
@@ -95,7 +106,12 @@ function createSessions({ ttlMs, now, results }) {
           sessions.set(id, item); pins.set(pin, id);
         }
         if (headerContext && (!item.headerContext || Object.keys(headerContext).some(k => k !== 'capturedAt' && headerContext[k] !== item.headerContext[k]) || Object.keys(item.headerContext).some(k => k !== 'capturedAt' && headerContext[k] !== item.headerContext[k]))) return reply(409, {success:false,error:'Session headers already fixed. Generate a new selfie session.'});
-        return reply(200, { success: true, pin: item.pin, expiresAt: item.expiresAt, ...(item.headerContext ? {headerContextVersion:1} : {}) });
+        if(sessionPackage){
+          if(SessionPackage.canonical(item.headerContext)!==SessionPackage.canonical(sessionPackage.headerContext)||(item.packageFingerprint&&item.packageFingerprint!==packageFingerprint))return reply(409,{success:false,error:'Session package already fixed. Generate a new selfie session.'});
+          if(!item.sessionPackage){item.sessionPackage=sessionPackage;item.packageFingerprint=packageFingerprint;item.linkKey=randomBytes(32).toString('base64url');links.set(item.linkKey,id);}
+        }
+        const transfer=item.sessionPackage?{version:1,url:SessionPackage.origin+'/session#s='+item.linkKey+'&h='+item.packageFingerprint,packageFingerprint:item.packageFingerprint,expiresAt:item.expiresAt}:null;
+        return reply(200, { success: true, pin: item.pin, expiresAt: item.expiresAt, ...(item.headerContext ? {headerContextVersion:1} : {}),...(sessionPackage?{transfer}:{}) });
       }
       const item = sessions.get(id);
       if (!item) return reply(404, { success: false, error: 'Session expired. Generate a new selfie link.' });

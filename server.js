@@ -2,6 +2,9 @@
 
 const http = require('node:http');
 const { createSessions } = require('./sessions');
+const fs=require('node:fs'),path=require('node:path');
+const linkPage=fs.readFileSync(path.join(__dirname,'session.html'));
+const linkScript=fs.readFileSync(path.join(__dirname,'session-page.js'));
 
 const MAX_BODY_BYTES = 48 * 1024;
 const RESULT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -62,6 +65,10 @@ function createRelay({ ttlMs = 15 * 60 * 1000, now = () => Date.now() } = {}) {
 
   return http.createServer(async (req, res) => {
     prune();
+    if(req.method==='GET'&&['/session','/session-page.js'].includes(req.url)){
+      res.writeHead(200,{'content-type':req.url==='/session'?'text/html; charset=utf-8':'application/javascript; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"});res.end(req.url==='/session'?linkPage:linkScript);return;
+    }
+    if(req.method==='GET'&&req.url==='/v4/health')return send(req,res,200,{ok:true,protocol:4,capabilities:['temporary-session-link-v1','session-package-sha256','pincheck']});
     if (req.method === 'GET' && req.url === '/healthz') return send(req, res, 200, { ok: true });
     if (req.method === 'GET' && req.url === '/v3/health') return send(req,res,200,{ok:true,protocol:3,capabilities:['oz-session-code','create','pincheck','liveness-result']});
     if (req.method === 'GET' && req.url === '/v2/health') return send(req, res, 200, { ok: true, protocol: 2, capabilities: ['create', 'pincheck', 'update', 'check', 'liveness-result', 'session-network-diagnostics', 'session-headers-v1'] });
