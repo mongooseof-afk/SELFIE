@@ -5,7 +5,7 @@
   "description": "Tornado selfie access codes and short-lived liveness result relay.",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test server.test.cjs sessions.test.cjs new-site.test.cjs network-context.test.cjs headers.test.cjs links.test.cjs"
+    "test": "node --test server.test.cjs sessions.test.cjs new-site.test.cjs network-context.test.cjs headers.test.cjs links.test.cjs status.test.cjs"
   },
   "engines": {
     "node": ">=18"

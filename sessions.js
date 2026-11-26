@@ -46,7 +46,7 @@ function createSessions({ ttlMs, now, results }) {
   }
   return async function handle(req, res, { send, readJson }) {
     const path = new URL(req.url, 'http://localhost').pathname;
-    if (!['/create', '/pincheck', '/session/claim', '/update', '/check', '/v3/create'].includes(path)) return false;
+    if (!['/create', '/pincheck', '/session/claim', '/update', '/check', '/started', '/v3/create'].includes(path)) return false;
     prune();
     const reply = (status, body) => { send(req, res, status, body); return true; };
     if (req.method !== 'POST') return reply(405, { success: false, error: 'POST required.' });
@@ -115,7 +115,12 @@ function createSessions({ ttlMs, now, results }) {
       }
       const item = sessions.get(id);
       if (!item) return reply(404, { success: false, error: 'Session expired. Generate a new selfie link.' });
-      if (path === '/check') return reply(200, { success: true, LivenessId: results.get(id)?.result || null });
+      const resultStatus = () => results.get(id)?.result ? 'FINISHED' : item.startedAt ? 'STARTED' : 'PENDING';
+      if (path === '/started') {
+        if (!item.startedAt) item.startedAt = now();
+        return reply(200, { success: true, status: resultStatus() });
+      }
+      if (path === '/check') return reply(200, { success: true, LivenessId: results.get(id)?.result || null, status: resultStatus() });
       const result = typeof body.livenessValue === 'string' ? body.livenessValue.trim().toLowerCase() : '';
       if (!UUID.test(result)) return reply(400, { success: false, error: 'Invalid Liveness ID.' });
       const existing = results.get(id);
@@ -130,4 +135,3 @@ function createSessions({ ttlMs, now, results }) {
   };
 }
 module.exports = { createSessions, decodeSession, generatePin };
-
